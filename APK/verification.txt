@@ -1,0 +1,111 @@
+Verifies
+Verified using v1 scheme (JAR signing): true
+Verified using v2 scheme (APK Signature Scheme v2): true
+Verified using v3 scheme (APK Signature Scheme v3): true
+Verified using v3.1 scheme (APK Signature Scheme v3.1): false
+Verified using v4 scheme (APK Signature Scheme v4): false
+Verified for SourceStamp: false
+Number of signers: 1
+Signer #1 certificate DN: CN=TermLens Local Probe
+Signer #1 certificate SHA-256 digest: 1cd5dfad7c5cca0aa5554a0e3d41cfc582c5e3b7c7c4d8c970626e668d9822f5
+Signer #1 certificate SHA-1 digest: f7906ac28076dacfe78b452f4531a9577728be5a
+Signer #1 certificate MD5 digest: 9c589ad7b0f069cda317ae9a308a6357
+Signer #1 key algorithm: RSA
+Signer #1 key size (bits): 3072
+Signer #1 public key SHA-256 digest: 2f7eef287833925d0c7e752ed4e2be2453d1d59c2b0bac314834fc3a37cb507e
+Signer #1 public key SHA-1 digest: 73ac7bbc0e2434303150538326381f547e60064c
+Signer #1 public key MD5 digest: 0df6e2ca73ad1623b784b00553e32a15
+
+package: name='cn.weilin.termlens.probe' versionCode='8' versionName='0.3.0-settings' platformBuildVersionName='15' platformBuildVersionCode='35' compileSdkVersion='35' compileSdkVersionCodename='15'
+sdkVersion:'23'
+targetSdkVersion:'36'
+uses-permission: name='android.permission.INTERNET'
+application-label:'TermLens Test'
+application-icon-160:'res/drawable/ic_launcher.xml'
+application: label='TermLens Test' icon='res/drawable/ic_launcher.xml'
+launchable-activity: name='cn.weilin.termlens.probe.MainActivity'  label='' icon=''
+feature-group: label=''
+  uses-feature: name='android.hardware.faketouch'
+  uses-implied-feature: name='android.hardware.faketouch' reason='default feature for all apps'
+provides-component:'accessibility'
+main
+other-activities
+supports-screens: 'small' 'normal' 'large' 'xlarge'
+supports-any-density: 'true'
+locales: '--_--'
+densities: '160'
+
+package: cn.weilin.termlens.probe
+uses-permission: name='android.permission.INTERNET'
+
+N: android=http://schemas.android.com/apk/res/android
+  E: manifest (line=2)
+    A: android:versionCode(0x0101021b)=(type 0x10)0x8
+    A: android:versionName(0x0101021c)="0.3.0-settings" (Raw: "0.3.0-settings")
+    A: android:compileSdkVersion(0x01010572)=(type 0x10)0x23
+    A: android:compileSdkVersionCodename(0x01010573)="15" (Raw: "15")
+    A: package="cn.weilin.termlens.probe" (Raw: "cn.weilin.termlens.probe")
+    A: platformBuildVersionCode=(type 0x10)0x23
+    A: platformBuildVersionName=(type 0x10)0xf
+    E: uses-sdk (line=6)
+      A: android:minSdkVersion(0x0101020c)=(type 0x10)0x17
+      A: android:targetSdkVersion(0x01010270)=(type 0x10)0x24
+    E: uses-permission (line=7)
+      A: android:name(0x01010003)="android.permission.INTERNET" (Raw: "android.permission.INTERNET")
+    E: queries (line=10)
+      E: intent (line=11)
+        E: action (line=12)
+          A: android:name(0x01010003)="android.intent.action.PROCESS_TEXT" (Raw: "android.intent.action.PROCESS_TEXT")
+        E: data (line=13)
+          A: android:mimeType(0x01010026)="text/plain" (Raw: "text/plain")
+    E: application (line=16)
+      A: android:theme(0x01010000)=@0x7f030000
+      A: android:label(0x01010001)="TermLens Test" (Raw: "TermLens Test")
+      A: android:icon(0x01010002)=@0x7f010000
+      A: android:allowBackup(0x01010280)=(type 0x12)0x0
+      A: android:supportsRtl(0x010103af)=(type 0x12)0xffffffff
+      E: activity (line=22)
+        A: android:name(0x01010003)=".MainActivity" (Raw: ".MainActivity")
+        A: android:exported(0x01010010)=(type 0x12)0xffffffff
+        E: intent-filter (line=23)
+          E: action (line=24)
+            A: android:name(0x01010003)="android.intent.action.MAIN" (Raw: "android.intent.action.MAIN")
+          E: category (line=25)
+            A: android:name(0x01010003)="android.intent.category.LAUNCHER" (Raw: "android.intent.category.LAUNCHER")
+      E: activity (line=28)
+        A: android:name(0x01010003)=".DiagnosticsActivity" (Raw: ".DiagnosticsActivity")
+        A: android:exported(0x01010010)=(type 0x12)0x0
+      E: activity (line=30)
+        A: android:name(0x01010003)=".SettingsActivity" (Raw: ".SettingsActivity")
+        A: android:exported(0x01010010)=(type 0x12)0xffffffff
+      E: activity (line=31)
+        A: android:name(0x01010003)=".OverlayTestActivity" (Raw: ".OverlayTestActivity")
+        A: android:exported(0x01010010)=(type 0x12)0x0
+      E: service (line=32)
+        A: android:label(0x01010001)="TermLens 划词按钮测试" (Raw: "TermLens 划词按钮测试")
+        A: android:name(0x01010003)=".SelectionOverlayService" (Raw: ".SelectionOverlayService")
+        A: android:permission(0x01010006)="android.permission.BIND_ACCESSIBILITY_SERVICE" (Raw: "android.permission.BIND_ACCESSIBILITY_SERVICE")
+        A: android:exported(0x01010010)=(type 0x12)0xffffffff
+        E: intent-filter (line=36)
+          E: action (line=37)
+            A: android:name(0x01010003)="android.accessibilityservice.AccessibilityService" (Raw: "android.accessibilityservice.AccessibilityService")
+        E: meta-data (line=39)
+          A: android:name(0x01010003)="android.accessibilityservice" (Raw: "android.accessibilityservice")
+          A: android:resource(0x01010025)=@0x7f040000
+      E: activity (line=42)
+        A: android:theme(0x01010000)=@0x7f030001
+        A: android:label(0x01010001)="Explain" (Raw: "Explain")
+        A: android:name(0x01010003)=".ExplainActivity" (Raw: ".ExplainActivity")
+        A: android:exported(0x01010010)=(type 0x12)0xffffffff
+        A: android:excludeFromRecents(0x01010017)=(type 0x12)0xffffffff
+        A: android:launchMode(0x0101001d)=(type 0x10)0x1
+        E: intent-filter (line=49)
+          E: action (line=50)
+            A: android:name(0x01010003)="android.intent.action.PROCESS_TEXT" (Raw: "android.intent.action.PROCESS_TEXT")
+          E: category (line=51)
+            A: android:name(0x01010003)="android.intent.category.DEFAULT" (Raw: "android.intent.category.DEFAULT")
+          E: data (line=52)
+            A: android:mimeType(0x01010026)="text/plain" (Raw: "text/plain")
+
+SHA256: 8c039d84edec5f9c99aaa36f16861636e4aa1b6c8e7f0cbbacbac0ccc1f9deaf
+Device runtime and MagicOS menu compatibility are not verified.

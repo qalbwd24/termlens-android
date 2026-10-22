@@ -1,0 +1,22 @@
+{
+  "apk": "TermLens-selection-probe-0.3.0.apk",
+  "package": "cn.weilin.termlens.probe",
+  "version": "0.3.0",
+  "min_sdk": 23,
+  "target_sdk": 36,
+  "compile_android_jar": "D:\\codex-tools\\android-build\\platform\\android-35\\android.jar",
+  "bytes": 46095,
+  "sha256": "8c039d84edec5f9c99aaa36f16861636e4aa1b6c8e7f0cbbacbac0ccc1f9deaf",
+  "checked": [
+    "Java/D8 build",
+    "APK v1/v2/v3 signature",
+    "ZIP alignment",
+    "manifest",
+    "PROCESS_TEXT filter",
+    "native Activity/service classes",
+    "INTERNET permission; manual accessibility opt-in",
+    "ZIP/DEX resources"
+  ],
+  "device_test": "Not performed: no connected Android runtime was used.",
+  "built_at_utc": "2026-10-06T19:29:39.960942+00:00"
+}

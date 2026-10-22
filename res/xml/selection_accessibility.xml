@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/selection_service_description"
+    android:accessibilityEventTypes="typeViewTextSelectionChanged|typeWindowStateChanged|typeViewScrolled|typeViewLongClicked|typeWindowContentChanged"
+    android:packageNames="cn.weilin.termlens.probe,mark.via.gp,com.twitter.android,com.google.android.youtube,com.openai.chatgpt,com.microsoft.emmx,com.android.chrome,com.ichi2.anki,io.legado.app.release"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagReportViewIds|flagIncludeNotImportantViews|flagRetrieveInteractiveWindows"
+    android:notificationTimeout="80"
+    android:canRetrieveWindowContent="true"
+    android:settingsActivity="cn.weilin.termlens.probe.SettingsActivity" />

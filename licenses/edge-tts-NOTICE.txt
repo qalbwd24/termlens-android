@@ -1,0 +1,16 @@
+TermLens Android Edge speech adapter
+
+EdgeSpeechProvider.java and EdgeToken.java adapt the Edge Read Aloud protocol
+and v2 token arithmetic from https://github.com/rany2/edge-tts .
+Copyright (c) rany and edge-tts contributors.
+Adaptation: native Android TLS/WebSocket transport, bounded MP3 synthesis,
+desktop-compatible cache manifests, and a provider interface.
+
+The adapter is supplied under LGPL version 3. See edge-tts-LICENSE.txt.
+No Python runtime, TTS Server installation, Microsoft account, or user signing
+credentials are required by this implementation.
+
+Editable source: src/cn/weilin/termlens/probe/EdgeSpeechProvider.java and
+src/cn/weilin/termlens/probe/EdgeToken.java. The accompanying source bundle
+contains the application sources, build scripts and notices needed to rebuild
+the combined work; use your own Android signing key when rebuilding.
