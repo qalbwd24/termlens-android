@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="cn.weilin.termlens.probe"
-    android:versionCode="15"
-    android:versionName="0.5.1-audio-prefetch">
+    android:versionCode="16"
+    android:versionName="0.5.2-manual-input">
     <uses-sdk android:minSdkVersion="23" android:targetSdkVersion="36" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
@@ -44,9 +44,10 @@
         </service>
         <activity
             android:name=".ExplainActivity"
-            android:label="Explain"
+            android:label="@string/explain_action_label"
             android:theme="@style/ExplainTheme"
             android:exported="true"
+            android:enableOnBackInvokedCallback="true"
             android:excludeFromRecents="true"
             android:launchMode="singleTop">
             <intent-filter>

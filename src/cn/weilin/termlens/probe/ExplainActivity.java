@@ -1,7 +1,6 @@
 package cn.weilin.termlens.probe;
 
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Intent;
@@ -18,6 +17,14 @@ import android.view.MenuItem;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.Window;
+import android.view.WindowManager;
+import android.view.KeyEvent;
+import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputMethodManager;
+import android.widget.EditText;
+import android.text.InputType;
+import android.text.TextWatcher;
+import android.text.Editable;
 import android.widget.Button;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
@@ -40,7 +47,7 @@ public final class ExplainActivity extends Activity {
     private LinearLayout root, content;
     private ScrollView scroll;
     private TextView levelLabel;
-    private ImageButton back, listen, favorite, copy;
+    private ImageButton back, listen, favorite, copy, edit;
     private Button lookup;
     private JSONObject profile;
     private StudyText liveTranslation, liveExplanation;
@@ -56,6 +63,12 @@ public final class ExplainActivity extends Activity {
     private int generation;
     private String lastRequestUser = "", lastRequestSystem = "";
     private LinearLayout toolbar;
+    static final String MANUAL_INPUT = "termlens_manual_input";
+    private boolean manualMode, keyboardPending;
+    private String manualDraft = "";
+    private EditText manualInput;
+    private ImageButton close;
+    private android.window.OnBackInvokedCallback backCallback;
 
     private static final class Level {
         final String original;
@@ -71,11 +84,10 @@ public final class ExplainActivity extends Activity {
         setResult(RESULT_CANCELED);
         JSONObject historical = historical(getIntent());
         String input = historical == null ? readInput(getIntent()) : historical.optString("text");
-        if (input.trim().isEmpty()) {
-            new AlertDialog.Builder(this).setMessage("没有收到选中文字，请返回正文重新划词。")
-                .setPositiveButton("返回原页面", (d, w) -> finish()).setOnCancelListener(d -> finish()).show();
-            return;
-        }
+        manualMode = state != null ? state.getBoolean("manual_mode", false)
+            : historical == null && input.trim().isEmpty();
+        manualDraft = state == null ? "" : state.getString("manual_draft", "");
+        keyboardPending = manualMode && (state == null || state.getBoolean("manual_editing", true));
         snapshotPrompts();
         SpeechOutput.get(this).maintain();
         if (historical != null) restoreProfile(historical);
@@ -97,9 +109,14 @@ public final class ExplainActivity extends Activity {
         }
         if(!levels.isEmpty()&&levels.get(0).record!=null)restoreProfile(levels.get(0).record);
         buildPage();
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            backCallback = this::previousLevel;
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, backCallback);
+        }
         render();
         Level level = current();
-        if (level.raw.isEmpty() && level.error.isEmpty()) requestCurrent();
+        if (!manualMode && !level.original.trim().isEmpty() && level.raw.isEmpty() && level.error.isEmpty()) requestCurrent();
         else if(level.record!=null)SpeechOutput.get(this).preload(level.record);
     }
 
@@ -119,10 +136,11 @@ public final class ExplainActivity extends Activity {
     @Override protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent); setIntent(intent);
         JSONObject historical=historical(intent);String input = historical==null?readInput(intent):historical.optString("text");
-        if (input.trim().isEmpty()) return;
+        manualMode = historical == null && input.trim().isEmpty();
+        manualDraft = ""; keyboardPending = manualMode;
         cancelRequest(); snapshotPrompts(); levels.clear();Level level=new Level(input);levels.add(level);
         if(historical!=null){restoreProfile(historical);level.record=historical;level.raw=historical.optString("answer");level.error="complete".equals(historical.optString("status"))?"":historical.optString("error","此记录未完成");render();SpeechOutput.get(this).preload(level.record);}
-        else {render();requestCurrent();}
+        else {render();if(!input.trim().isEmpty())requestCurrent();else focusManualInput();}
     }
 
     private String readInput(Intent intent) {
@@ -135,13 +153,19 @@ public final class ExplainActivity extends Activity {
 
     private void buildPage() {
         requestWindowFeature(Window.FEATURE_NO_TITLE);
+        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM);
+        getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+            | WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
         getWindow().setStatusBarColor(Ui.CANVAS); getWindow().setNavigationBarColor(Ui.CANVAS);
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
-        root = Ui.column(this); root.setBackgroundColor(Ui.CANVAS);
+        root = Ui.column(this); root.setBackgroundColor(Ui.CANVAS); root.setFocusableInTouchMode(true);
         int p = Ui.dp(this, 12);
         root.setPadding(p, p, p, p);
         root.setOnApplyWindowInsetsListener((view, insets) -> {
-            view.setPadding(p + insets.getSystemWindowInsetLeft(), insets.getSystemWindowInsetTop(),
+            if (android.os.Build.VERSION.SDK_INT >= 30) {
+                android.graphics.Insets safe = insets.getInsets(android.view.WindowInsets.Type.systemBars() | android.view.WindowInsets.Type.ime());
+                view.setPadding(p + safe.left, safe.top, p + safe.right, Ui.dp(this, 4) + safe.bottom);
+            } else view.setPadding(p + insets.getSystemWindowInsetLeft(), insets.getSystemWindowInsetTop(),
                 p + insets.getSystemWindowInsetRight(), Ui.dp(this, 4) + insets.getSystemWindowInsetBottom());
             return insets;
         });
@@ -151,7 +175,7 @@ public final class ExplainActivity extends Activity {
         levelLabel = Ui.text(this, "原文", 12, Ui.MUTED); levelLabel.setSingleLine(true);
         header.addView(levelLabel);
         // Keep the header small; the close action is always visible, even on a long answer.
-        ImageButton close = icon(R.drawable.ic_termlens_close, "返回原页面"); close.setOnClickListener(v -> finish());
+        close = icon(R.drawable.ic_termlens_close, "返回原页面"); close.setOnClickListener(v -> previousLevel());
         header.addView(close, size(40)); root.addView(header, new LinearLayout.LayoutParams(-1, Ui.dp(this, 46)));
         scroll = new ScrollView(this); scroll.setId(0x544c01); scroll.setFillViewport(false);
         content = Ui.column(this); content.setPadding(0, Ui.dp(this, 4), 0, Ui.dp(this, 8));
@@ -170,7 +194,9 @@ public final class ExplainActivity extends Activity {
             ((ClipboardManager)getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(ClipData.newPlainText("TermLens", current().raw));
             toast("已复制");
         });
-        for (ImageButton button : new ImageButton[]{back, listen, favorite, copy}) toolbar.addView(button, size(40));
+        edit = icon(R.drawable.ic_termlens_edit, "编辑当前原文");
+        edit.setOnClickListener(v -> beginEditing());
+        for (ImageButton button : new ImageButton[]{back, listen, favorite, copy, edit}) toolbar.addView(button, size(40));
         toolbar.addView(new View(this), new LinearLayout.LayoutParams(0, 1, 1));
         lookup = Ui.button(this, "解释选中"); lookup.setTextSize(12); lookup.setFocusable(false);
         lookup.setPadding(Ui.dp(this, 8), 0, Ui.dp(this, 8), 0);
@@ -180,7 +206,7 @@ public final class ExplainActivity extends Activity {
             return false;
         });
         lookup.setOnClickListener(v -> { String text = pressedSelection.isEmpty() ? selection : pressedSelection;
-            pressedSelection = ""; openLookup(text); });
+            pressedSelection = ""; if (manualMode) submitManual(); else openLookup(text); });
         toolbar.addView(lookup, new LinearLayout.LayoutParams(Ui.dp(this, 88), Ui.dp(this, 40)));
         root.addView(toolbar, new LinearLayout.LayoutParams(-1, Ui.dp(this, 48)));
     }
@@ -247,11 +273,37 @@ public final class ExplainActivity extends Activity {
         source.setBackground(Ui.surface(this, Color.WHITE, 12));
         LinearLayout sourceHeader = new LinearLayout(this); sourceHeader.setGravity(Gravity.CENTER_VERTICAL);
         StudyText original = new StudyText(level.original, 14, false);
-        sourceHeader.addView(original, new LinearLayout.LayoutParams(0, -2, 1));
+        manualInput = null;
+        if (manualMode) {
+            manualInput = new EditText(this); manualInput.setId(0x544c02);
+            manualInput.setTextSize(14); manualInput.setTextColor(Ui.INK);
+            manualInput.setHint("输入英文，回车翻译");
+            manualInput.setContentDescription("英文输入栏");
+            manualInput.setSingleLine(true);
+            manualInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+            manualInput.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
+            if (android.os.Build.VERSION.SDK_INT >= 24) manualInput.setImeHintLocales(new android.os.LocaleList(Locale.US));
+            manualInput.setText(manualDraft);
+            manualInput.addTextChangedListener(new TextWatcher() {
+                public void beforeTextChanged(CharSequence s,int start,int count,int after) { }
+                public void onTextChanged(CharSequence s,int start,int before,int count) { manualDraft=s.toString(); updateActions(); }
+                public void afterTextChanged(Editable s) { }
+            });
+            manualInput.setOnEditorActionListener((v, action, event) -> {
+                boolean enter = event != null && event.getKeyCode() == KeyEvent.KEYCODE_ENTER;
+                if (enter || action == EditorInfo.IME_ACTION_SEARCH || action == EditorInfo.IME_ACTION_GO || action == EditorInfo.IME_ACTION_DONE) {
+                    if (!enter || event.getAction() == KeyEvent.ACTION_UP) submitManual();
+                    return true;
+                }
+                return false;
+            });
+            sourceHeader.addView(manualInput, new LinearLayout.LayoutParams(0, -2, 1));
+        } else sourceHeader.addView(original, new LinearLayout.LayoutParams(0, -2, 1));
         ImageButton originalSpeaker = icon(R.drawable.ic_termlens_speaker, "朗读原文");
         originalSpeaker.setOnClickListener(v -> speak(level.original)); sourceHeader.addView(originalSpeaker, size(30));
         source.addView(sourceHeader);
-        if (level.original.length() > 100) {
+        originalSpeaker.setEnabled(level.record != null);
+        if (!manualMode && level.original.length() > 100) {
             original.setMaxLines(level.sourceExpanded ? Integer.MAX_VALUE : 3); original.setEllipsize(level.sourceExpanded ? null : TextUtils.TruncateAt.END);
             TextView expand = Ui.text(this, level.sourceExpanded ? "收起原文" : "展开原文", 12, Ui.ACCENT);
             expand.setPadding(0, Ui.dp(this, 4), 0, Ui.dp(this, 4)); expand.setOnClickListener(v -> {
@@ -268,12 +320,13 @@ public final class ExplainActivity extends Activity {
         updateStream();
         if (!level.error.isEmpty()) {
             content.addView(Ui.text(this, level.error, 14, Ui.MUTED));
-            Button retry = Ui.button(this, "重试"); retry.setOnClickListener(v -> requestCurrent()); content.addView(retry);
+            Button retry = Ui.button(this, "重试"); retry.setOnClickListener(v -> { if (manualMode) submitManual(); else requestCurrent(); }); content.addView(retry);
             Ui.space(this, content, 8);
             Button settings = Ui.button(this, "模型连接设置");
             settings.setOnClickListener(v -> startActivityForResult(new Intent(this, SettingsActivity.class), EDIT_CONNECTION)); content.addView(settings);
         }
         rendering = false; updateActions();
+        if (keyboardPending) focusManualInput(); else root.requestFocus();
         scroll.post(() -> { if (!levels.isEmpty() && current() == level) scroll.scrollTo(0, level.scrollY); });
         maxRenderMs=Math.max(maxRenderMs,android.os.SystemClock.elapsedRealtime()-renderStarted);
     }
@@ -303,21 +356,72 @@ public final class ExplainActivity extends Activity {
     private void updateActions() {
         if (lookup == null || levels.isEmpty()) return;
         boolean selected = !selection.trim().isEmpty();
-        lookup.setText(busy ? "查询中…" : "解释选中"); lookup.setEnabled(!busy);
-        lookup.setAlpha(!busy && selected ? 1f : 0.5f);
+        boolean canSubmit = !manualDraft.trim().isEmpty() && !(busy && manualDraft.trim().equals(current().original));
+        lookup.setText(manualMode ? (busy && !canSubmit ? "查询中…" : "翻译") : (busy ? "查询中…" : "解释选中"));
+        lookup.setEnabled(manualMode ? canSubmit : !busy);
+        lookup.setAlpha((manualMode ? canSubmit : !busy && selected) ? 1f : 0.5f);
+        edit.setEnabled(!manualMode);
         listen.setEnabled(!current().raw.isEmpty() || selected); copy.setEnabled(!current().raw.isEmpty());
         favorite.setEnabled(!busy&&current().record!=null&&!current().raw.isEmpty());
         favorite.setAlpha(current().record!=null&&AppData.get(this).saved(current().record)?1f:0.5f);
         back.setContentDescription(levels.size() > 1 ? "返回上一层" : "返回原页面");
+        close.setContentDescription(levels.size() > 1 ? "关闭本层，返回上一层" : "返回原页面");
     }
     private void openLookup(String query) {
         if (busy) return;
         if (query == null || query.trim().isEmpty()) { toast("先在译文或解释里长按选词，再点“解释选中”"); return; }
         if (levels.size() >= MAX_LEVELS) { toast("请先返回上一层，再选择其他词语"); return; }
-        current().scrollY = scroll.getScrollY(); cancelRequest();
+        current().scrollY = scroll.getScrollY(); cancelRequest(); manualMode = false; hideKeyboard();
         levels.add(new Level(query.trim())); requestCurrent();
     }
+    private void beginEditing() {
+        if (levels.isEmpty()) return;
+        current().scrollY = scroll.getScrollY();
+        cancelRequest(); SpeechOutput.get(this).stop();
+        manualMode = true; manualDraft = current().original; keyboardPending = true;
+        render(); scroll.post(() -> scroll.scrollTo(0, 0));
+    }
+    private void submitManual() {
+        if (!manualMode || levels.isEmpty()) return;
+        String query = manualDraft.trim();
+        if (query.isEmpty()) { if (manualInput != null) manualInput.setError("请输入英文"); return; }
+        if (busy && query.equals(current().original)) return;
+        hideKeyboard(); cancelRequest(); SpeechOutput.get(this).stop();
+        manualDraft = query; manualMode = false;
+        levels.set(levels.size() - 1, new Level(query)); requestCurrent();
+    }
+    private void focusManualInput() {
+        final EditText editor = manualInput;
+        if (editor == null || !keyboardPending) return;
+        getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE | WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
+        editor.requestFocus(); editor.setSelection(editor.length());
+        editor.post(() -> {
+            if (destroyed || isFinishing() || editor != manualInput || !keyboardPending || !hasWindowFocus()) return;
+            ((InputMethodManager)getSystemService(INPUT_METHOD_SERVICE)).showSoftInput(editor, InputMethodManager.SHOW_IMPLICIT);
+            if (android.os.Build.VERSION.SDK_INT >= 30 && editor.getWindowInsetsController() != null)
+                editor.getWindowInsetsController().show(android.view.WindowInsets.Type.ime());
+            keyboardPending = false;
+        });
+    }
+    @Override public void onWindowFocusChanged(boolean focused) {
+        super.onWindowFocusChanged(focused); if (focused && keyboardPending) focusManualInput();
+    }
+    private boolean hideKeyboard() {
+        boolean visible = false;
+        if (root != null) {
+            if (android.os.Build.VERSION.SDK_INT >= 30 && root.getRootWindowInsets() != null)
+                visible = root.getRootWindowInsets().isVisible(android.view.WindowInsets.Type.ime());
+            else { android.graphics.Rect frame=new android.graphics.Rect(); root.getWindowVisibleDisplayFrame(frame);
+                visible=root.getRootView().getHeight()-frame.bottom > Ui.dp(this,150); }
+            ((InputMethodManager)getSystemService(INPUT_METHOD_SERVICE)).hideSoftInputFromWindow(root.getWindowToken(),0);
+        }
+        keyboardPending=false;
+        getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE | WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
+        if(manualInput!=null)manualInput.clearFocus();
+        return visible;
+    }
     private void requestCurrent() {
+        if (levels.isEmpty() || current().original.trim().isEmpty()) return;
         cancelRequest(); final int requestId = generation; Level level = current();
         busy = true; level.error = ""; level.raw=""; render();
         lastRequestSystem = levels.size() == 1 ? primarySystem : secondarySystem;
@@ -354,8 +458,13 @@ public final class ExplainActivity extends Activity {
     }
     private void cancelRequest() { generation++; if(busy&&!levels.isEmpty()&&current().record!=null)AppData.get(this).finish(current().record,current().raw,"cancelled","查询已取消");if (pending != null) { pending.cancel(); pending = null; } busy = false; }
     private void previousLevel() {
+        if (hideKeyboard()) return;
+        if (manualMode && !current().original.trim().isEmpty()) {
+            manualMode = false; render(); return;
+        }
+        SpeechOutput.get(this).stop();
         if (levels.size() <= 1) { finish(); return; }
-        cancelRequest(); levels.remove(levels.size() - 1); render();
+        cancelRequest(); manualMode = false; levels.remove(levels.size() - 1); render();
     }
     private void speak(String text) {
         if(current().record==null||text==null||text.trim().isEmpty())return;
@@ -365,10 +474,12 @@ public final class ExplainActivity extends Activity {
     }
     private void toast(String message) { Toast.makeText(this, message, Toast.LENGTH_SHORT).show(); }
     @Override protected void onActivityResult(int code, int result, Intent data) {
-        super.onActivityResult(code, result, data); if (code == EDIT_CONNECTION && !levels.isEmpty()) requestCurrent();
+        super.onActivityResult(code, result, data); if (code == EDIT_CONNECTION && !levels.isEmpty() && !manualMode) requestCurrent();
     }
     @Override protected void onSaveInstanceState(Bundle state) {
         if (!levels.isEmpty() && scroll != null) current().scrollY = scroll.getScrollY();
+        state.putBoolean("manual_mode", manualMode); state.putString("manual_draft", manualDraft);
+        state.putBoolean("manual_editing", manualInput != null && manualInput.hasFocus());
         state.putString("primary_system", primarySystem); state.putString("secondary_system", secondarySystem);
         state.putInt("level_count", levels.size());
         for (int i = 0; i < levels.size(); i++) {
@@ -381,7 +492,10 @@ public final class ExplainActivity extends Activity {
     @Override public void onBackPressed() { previousLevel(); }
     @Override public void finish() { cancelRequest(); setResult(RESULT_CANCELED); super.finish(); }
     @Override protected void onPause(){if(busy&&!levels.isEmpty()&&current().record!=null)AppData.get(this).finish(current().record,current().raw,"pending","");super.onPause();}
-    @Override protected void onDestroy() { destroyed = true; cancelRequest(); SpeechOutput.get(this).stop(); super.onDestroy(); }
+    @Override protected void onDestroy() {
+        if (android.os.Build.VERSION.SDK_INT >= 33 && backCallback != null)
+            getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(backCallback);
+        destroyed = true; cancelRequest(); SpeechOutput.get(this).stop(); super.onDestroy(); }
 
     private String fingerprint(String value) {
         try { byte[] hash = MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8));

@@ -39,8 +39,18 @@ final class TermLensPrefs {
     static String buttonPosition(Context c) { return open(c).getString(BUTTON_POSITION, "auto"); }
     static boolean buttonTranslucent(Context c) { return open(c).getBoolean(BUTTON_TRANSLUCENT, true); }
     static boolean buttonLocked(Context c) { return open(c).getBoolean(BUTTON_LOCKED, false); }
-    static String speechVoice(Context c){return open(c).getString("speech_voice","en-US-AndrewMultilingualNeural");}
-    static int speechRate(Context c){try{return Math.max(-50,Math.min(50,Integer.parseInt(open(c).getString("speech_rate","0"))));}catch(Exception e){return 0;}}
+    // Migrate only the old default pair, once. Explicit custom voices/rates remain intact.
+    static synchronized void migrateSpeech(Context c) {
+        SharedPreferences prefs = open(c);
+        if (prefs.getBoolean("speech_us_andrew_v1", false)) return;
+        String voice = prefs.getString("speech_voice", SpeechDefaults.LEGACY_VOICE);
+        String rate = prefs.getString("speech_rate", "0");
+        String[] migrated = SpeechDefaults.migrate(voice, rate);
+        prefs.edit().putString("speech_voice", migrated[0]).putString("speech_rate", migrated[1])
+            .putBoolean("speech_us_andrew_v1", true).apply();
+    }
+    static String speechVoice(Context c){migrateSpeech(c);return open(c).getString("speech_voice",SpeechDefaults.VOICE);}
+    static int speechRate(Context c){migrateSpeech(c);try{return Math.max(-50,Math.min(50,Integer.parseInt(open(c).getString("speech_rate","10"))));}catch(Exception e){return 10;}}
     static boolean hideOnKeyboard(Context c) { return open(c).getBoolean(HIDE_ON_KEYBOARD, true); }
     static String primaryName(Context c) { DesktopPrompts.migrate(c); return open(c).getString(PRIMARY_NAME, DesktopPrompts.value(c, "primaryName")); }
     static String primaryPrompt(Context c) { DesktopPrompts.migrate(c); return open(c).getString(PRIMARY_PROMPT, DesktopPrompts.value(c, "primaryPrompt")); }

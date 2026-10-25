@@ -110,6 +110,7 @@ public final class SelectionOverlayService extends AccessibilityService {
         if (nextResident) active.handler.postDelayed(() -> { if (active != null) active.showResident(); }, 250);
     }
     @Override protected void onServiceConnected() {
+        PACKAGES[0] = getPackageName();
         active = this;
         TermLensPrefs.enableDirectDefaults(this);
         resident = TermLensPrefs.resident(this);
@@ -363,16 +364,16 @@ public final class SelectionOverlayService extends AccessibilityService {
             String sourceMenu = menuPackage;
             if (resident) {
                 AccessibilityNodeInfo root = getRootInActiveWindow();
-                if (root == null) { Toast.makeText(this, "请先打开正文并划词", Toast.LENGTH_SHORT).show(); return; }
+                if (root == null) { openManualInput(); return; }
                 try {
                     String pkg = String.valueOf(root.getPackageName());
                     if (!allowed(pkg) || getPackageName().equals(pkg)) {
-                        Toast.makeText(this, "此 App 暂未适配直接划词", Toast.LENGTH_SHORT).show(); return;
+                        openManualInput(); return;
                     }
                     current = menuBridge.selectedText(root);
                     if (current.trim().isEmpty()) {
                         if (menuBridge.selectionAnchor(pkg, root) == null) {
-                            Toast.makeText(this, "先长按选中文字，再点 ✦", Toast.LENGTH_SHORT).show(); return;
+                            openManualInput(); return;
                         }
                         sourceMenu = pkg;
                     }
@@ -417,6 +418,13 @@ public final class SelectionOverlayService extends AccessibilityService {
             selection = null;
             lastOutcome = "悬浮层未显示：" + e.getClass().getSimpleName();
         }
+    }
+    private void openManualInput() {
+        forwardingMenu = true; hide(); clicked++;
+        try { startActivity(new Intent(this, ExplainActivity.class)
+            .putExtra(ExplainActivity.MANUAL_INPUT, true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); }
+        catch (RuntimeException e) { lastOutcome = "系统未允许打开输入页：" + e.getClass().getSimpleName(); }
+        handler.postDelayed(() -> { forwardingMenu = false; if (resident) showResident(); }, 700);
     }
     private void hide() {
         if (pendingButtonHold != null) { handler.removeCallbacks(pendingButtonHold); pendingButtonHold = null; }

@@ -9,13 +9,9 @@ if (-not (Test-Path -LiteralPath $Python -PathType Leaf)) { throw 'Pass a valid 
 $signingDirectory = Join-Path $PSScriptRoot 'signing'
 New-Item -ItemType Directory -Path $signingDirectory -Force | Out-Null
 $passwordFile = Join-Path $signingDirectory 'password.dpapi'
-if (-not (Test-Path -LiteralPath $passwordFile)) {
-    $randomBytes = New-Object byte[] 32
-    $generator = [System.Security.Cryptography.RandomNumberGenerator]::Create()
-    try { $generator.GetBytes($randomBytes) } finally { $generator.Dispose() }
-    $password = [Convert]::ToBase64String($randomBytes)
-    ConvertTo-SecureString $password -AsPlainText -Force | ConvertFrom-SecureString |
-        Set-Content -LiteralPath $passwordFile -Encoding UTF8
+if (-not (Test-Path -LiteralPath $passwordFile -PathType Leaf) -or
+    -not (Test-Path -LiteralPath (Join-Path $signingDirectory 'probe.p12') -PathType Leaf)) {
+    throw 'Original signing/probe.p12 and password.dpapi are required. Run on the original signing computer; never generate a replacement key for an upgrade.'
 }
 $securePassword = (Get-Content -LiteralPath $passwordFile -Raw -Encoding UTF8).Trim() | ConvertTo-SecureString
 $previousPassword = $env:TERMLENS_PROBE_SIGN_PASSWORD

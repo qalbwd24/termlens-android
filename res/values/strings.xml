@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="explain_action_label">Explain</string>
     <string name="selection_service_description">在屏幕下角显示轻量 Explain 按钮。支持 AnkiDroid、阅读和浏览器中的原生划词；点按钮后调用原 App 的文字处理入口。选中文字会发送到你配置的模型服务进行解释。没有截图或 OCR 功能。可在设置中关闭常驻按钮或停用本服务。</string>
 </resources>

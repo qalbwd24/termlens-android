@@ -1,4 +1,6 @@
-# TermLens Android 启动与交接（0.5.1，2026-10-16）
+# TermLens Android 启动与交接（0.5.2 独立测试，2026-10-25）
+
+本轮新增手动输入、铅笔编辑、逐层返回和美式 Andrew 语音；独立测试版已获用户验收并授权更新源码；生产升级包必须使用原签名电脑的旧签名，缺少该签名时不得交付替代签名包。当前测试方法见 `MANUAL-INPUT-TEST-20261025.md`。
 
 当前手机端源码在本目录。当前电脑端以根目录 `README-目录导航.txt` 和 `Start-TermLens.ps1` 指向的 `release/Termlens` 为基准；旧 `TermLens/HANDOFF-20261001-UI-BACKEND-REFACTOR.md`、`WORK-PLAN.md` 是历史设计参考，不代表正在使用的电脑端。不要把打包目录、旧分支、签名文件或个人数据当成可清理的构建缓存。
 
@@ -26,7 +28,7 @@
 
 `SpeechProvider` 隔离语音服务；`EdgeSpeechProvider` + `EdgeToken` 在手机内通过 TLS/WebSocket 调用 Edge 朗读，原生 Java 实现，不依赖电脑、Python 或 TTS Server。协议及 token 算法参考 [edge-tts](https://github.com/rany2/edge-tts)，授权说明见 `licenses/`，上游协议变化可能需要更新适配器。
 
-`SpeechOutput` 负责后台合成、音频分段、播放器、内存 LRU 和持久缓存。默认 Andrew Multilingual，可配置 Voice 和 Rate；指纹由 Provider、Voice、Rate、扩展名与纯文本组成。普通缓存带 QueryId、WordComplete/ExplanationComplete；永久收藏带 FavoriteId。原文与解释分开缓存，选中片段不覆盖整段原文缓存；播放失败不把空文件标记为有效。首次合成需要联网，已有且参数匹配的音频从本机读取。
+`SpeechOutput` 负责后台合成、音频分段、播放器、内存 LRU 和持久缓存。默认 en-US-AndrewNeural、+10%，可配置 Voice 和 Rate；指纹由 Provider、Voice、Rate、扩展名与纯文本组成。普通缓存带 QueryId、WordComplete/ExplanationComplete；永久收藏带 FavoriteId。原文与解释分开缓存，选中片段不覆盖整段原文缓存；播放失败不把空文件标记为有效。首次合成需要联网，已有且参数匹配的音频从本机读取。
 
 0.5.1 在 AppData.begin 后、发起 LLM 之前提交原文预取，LLM 完成后独立提交解释预取；打开历史同样补齐缓存。后台三条工作线程和独立播放执行器分离，ASSET_LOCK 只保护文件/清单操作，不覆盖网络合成。每次任务冻结语音配置；preparing/downloading 的 FutureTask 合并同一查询/内容的并发工作，失败后移除任务允许重试。按内容指纹索引其他有效历史/收藏清单，跨进程、新查询也能离线复用，仍写入当前查询目录；不新增与桌面端冲突的持久缓存格式。导入 ZIP 后使索引失效。点击时缓存命中直接播放，延迟提示仅用于仍在准备的请求，诊断区提供 click_to_ready_ms/click_to_play_ms。
 

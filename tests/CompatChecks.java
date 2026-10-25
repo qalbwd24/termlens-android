@@ -18,7 +18,7 @@ public final class CompatChecks extends Instrumentation {
     private final StringBuilder report=new StringBuilder();
     private void check(boolean value,String message){if(!value)throw new AssertionError(message);report.append("PASS: ").append(message).append('\n');}
     public void onCreate(Bundle args){super.onCreate(args);start();}
-    public void onStart(){Bundle result=new Bundle();try{runChecks();runAudioChecks();result.putString("stream",report.toString());finish(-1,result);}catch(Throwable error){result.putString("stream",report+"FAIL: "+android.util.Log.getStackTraceString(error));finish(0,result);}}
+    public void onStart(){Bundle result=new Bundle();try{runChecks();runAudioChecks();runSpeechDefaultsChecks();result.putString("stream",report.toString());finish(-1,result);}catch(Throwable error){result.putString("stream",report+"FAIL: "+android.util.Log.getStackTraceString(error));finish(0,result);}}
     private void reset() throws Exception {java.lang.reflect.Field field=AppData.class.getDeclaredField("instance");field.setAccessible(true);AppData current=(AppData)field.get(null);if(current!=null)current.close();field.set(null,null);}
     private static final class Fixture extends ContextWrapper {
         final File root;
@@ -75,6 +75,31 @@ public final class CompatChecks extends Instrumentation {
         SpeechOutput retrying=new SpeechOutput(fixture,retry);JSONObject failed=record(store,"retry after prefetch failure");
         try{boolean rejected=false;try{prepare.invoke(retrying,failed,failed.optString("text"),"Word");}catch(Exception e){rejected=true;}List<?> recovered=(List<?>)prepare.invoke(retrying,failed,failed.optString("text"),"Word");check(rejected&&attempts.get()==2&&recovered.size()==1,"A failed prefetch can be retried instead of retaining a failed shared task");}finally{retrying.shutdown();}
         reset();
+    }
+    private void runSpeechDefaultsChecks() throws Exception {
+        reset(); Fixture fixture=new Fixture(getTargetContext(),"us-voice-"+AppData.id());
+        SharedPreferences prefs=TermLensPrefs.open(fixture);
+        check(TermLensPrefs.speechVoice(fixture).equals("en-US-AndrewNeural") && TermLensPrefs.speechRate(fixture)==10,"New install uses US Andrew at +10 percent");
+        prefs.edit().clear().putString("speech_voice","en-GB-SoniaNeural").putString("speech_rate","-5").commit();
+        check(TermLensPrefs.speechVoice(fixture).equals("en-GB-SoniaNeural") && TermLensPrefs.speechRate(fixture)==-5,"Existing custom voice and rate survive migration");
+        prefs.edit().clear().putBoolean("speech_us_andrew_v1",true).putString("speech_voice",SpeechDefaults.LEGACY_VOICE).putString("speech_rate","0").commit();
+        final AtomicInteger calls=new AtomicInteger();
+        SpeechProvider provider=new SpeechProvider(){public String id(){return "edge";}public String extension(){return ".mp3";}
+            public byte[] synthesize(String text,String voice,int rate){calls.incrementAndGet();byte[] bytes=new byte[128];Arrays.fill(bytes,(byte)(voice.hashCode()+rate));return bytes;}};
+        AppData store=AppData.get(fixture);JSONObject record=record(store,"voice migration fixture");store.finish(record,"answer","complete","");store.setSaved(record,true);
+        SpeechOutput speech=new SpeechOutput(fixture,provider);
+        java.lang.reflect.Method prepare=SpeechOutput.class.getDeclaredMethod("prepare",JSONObject.class,String.class,String.class);prepare.setAccessible(true);
+        try {
+            List<?> old=(List<?>)prepare.invoke(speech,record,record.optString("text"),"Word");
+            prefs.edit().remove("speech_us_andrew_v1").commit();
+            check(TermLensPrefs.speechVoice(fixture).equals("en-US-AndrewNeural") && TermLensPrefs.speechRate(fixture)==10,"Existing legacy default pair migrates");
+            List<?> fresh=(List<?>)prepare.invoke(speech,record,record.optString("text"),"Word");
+            check(calls.get()==2 && !old.get(0).equals(fresh.get(0)),"Voice/rate migration cannot replay old memory or disk audio");
+            check(((File)old.get(0)).isFile() && store.saved(record),"Old audio files and favorite records are not destructively deleted");
+            prepare.invoke(speech,record,record.optString("text"),"Word");check(calls.get()==2,"New matching voice cache reuses audio");
+            prefs.edit().putString("speech_rate","0").commit();
+            check(TermLensPrefs.speechRate(fixture)==0,"Migration marker preserves subsequent user changes");
+        } finally { speech.shutdown(); reset(); }
     }
     private JSONObject record(AppData store,String word){return store.begin(word,false,word,"{}","fixture-model","fixture-prompt");}
     private File audio(Fixture context,String id,boolean favorite,boolean unknown) throws Exception {

@@ -113,7 +113,7 @@ final class SelectionMenuBridge {
         String text = String.valueOf(node.getText());
         String desc = String.valueOf(node.getContentDescription());
         boolean match = mode == 0 ? (id.startsWith("android:id/floating_toolbar") || id.endsWith(":id/select_action_menu_copy"))
-            : mode == 1 ? "Explain".equals(text) && ("android:id/floating_toolbar_menu_item_text".equals(id)
+            : mode == 1 ? service.getString(R.string.explain_action_label).equals(text) && ("android:id/floating_toolbar_menu_item_text".equals(id)
                 || "io.legado.app.release:id/text_view".equals(id))
             : mode == 3 ? node.isScrollable()
             : id.endsWith(":id/iv_menu_more") || id.endsWith(":id/floating_toolbar_overflow_button")

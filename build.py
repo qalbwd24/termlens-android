@@ -13,7 +13,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parent
 PACKAGE = "cn.weilin.termlens.probe"
-VERSION = "0.5.1"
+VERSION = "0.5.2"
 ANDROID = "{http://schemas.android.com/apk/res/android}"
 
 
@@ -52,7 +52,7 @@ def validate_source():
     activity = next(a for a in application.findall("activity")
                     if a.attrib[ANDROID + "name"] == ".ExplainActivity")
     assert activity.attrib[ANDROID + "exported"] == "true"
-    assert activity.attrib[ANDROID + "label"] == "Explain"
+    assert activity.attrib[ANDROID + "label"] == "@string/explain_action_label"
     entry = activity.find("intent-filter")
     assert entry.find("action").attrib[ANDROID + "name"] == "android.intent.action.PROCESS_TEXT"
     assert entry.find("category").attrib[ANDROID + "name"] == "android.intent.category.DEFAULT"
@@ -69,12 +69,20 @@ def main():
     parser.add_argument("--tools", type=Path, required=True)
     parser.add_argument("--output", type=Path, default=ROOT / "APK")
     parser.add_argument("--work-root", type=Path, default=ROOT / "build/work")
+    parser.add_argument("--expected-signer-sha256", help="Expected original certificate SHA-256 for verified production upgrades")
+    parser.add_argument("--test-app", action="store_true", help="Build an isolated, side-by-side test application; never upgrades production")
     args = parser.parse_args()
+    application_id = PACKAGE + ".manualtest" if args.test_app else PACKAGE
+    keystore = ROOT / ("signing/manualtest.p12" if args.test_app else "signing/probe.p12")
+    if not args.test_app and not keystore.is_file():
+        raise FileNotFoundError("Original signing/probe.p12 is required for production upgrades. Build on the original signing computer; do not generate a replacement key. Use --test-app only for an isolated test install.")
     tools = args.tools.resolve()
     validate_source()
-    javac = first(tools, "jdk/**/bin/javac.exe")
-    java, keytool = javac.with_name("java.exe"), javac.with_name("keytool.exe")
-    aapt2 = first(tools, "build-tools/**/aapt2.exe")
+    suffix = ".exe" if os.name == "nt" else ""
+    candidates = sorted(tools.glob("jdk/**/bin/javac" + suffix))
+    javac = candidates[-1] if candidates else Path(shutil.which("javac") or "javac")
+    java, keytool = javac.with_name("java" + suffix), javac.with_name("keytool" + suffix)
+    aapt2 = first(tools, "build-tools/**/aapt2" + suffix)
     build_tools = aapt2.parent
     android_jar = first(tools, "platform/**/android.jar")
     stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d-%H%M%S")
@@ -84,13 +92,32 @@ def main():
     shutil.copytree(ROOT / "res", work / "res")
     shutil.copytree(ROOT / "src", work / "src")
     shutil.copyfile(ROOT / "AndroidManifest.xml", work / "AndroidManifest.xml")
+    if args.test_app:
+        manifest_path = work / "AndroidManifest.xml"
+        tree = ET.parse(manifest_path); manifest = tree.getroot(); manifest.set("package", application_id)
+        app = manifest.find("application"); app.set(ANDROID + "label", "TermLens 测试版")
+        for component in app:
+            name = component.get(ANDROID + "name", "")
+            if name.startswith("."): component.set(ANDROID + "name", PACKAGE + name)
+            if component.tag == "service": component.set(ANDROID + "label", "TermLens 测试版划词按钮")
+        tree.write(manifest_path, encoding="utf-8", xml_declaration=True)
+        config_path=work / "res/xml/selection_accessibility.xml"
+        config=ET.parse(config_path); element=config.getroot()
+        element.set(ANDROID + "packageNames", element.get(ANDROID + "packageNames").replace(PACKAGE, application_id))
+        config.write(config_path, encoding="utf-8", xml_declaration=True)
+        strings_path=work / "res/values/strings.xml"
+        strings=ET.parse(strings_path)
+        next(x for x in strings.getroot() if x.get("name")=="explain_action_label").text="Explain 测试"
+        strings.write(strings_path, encoding="utf-8", xml_declaration=True)
+        icon=work / "res/drawable/ic_launcher.xml"
+        icon.write_text(icon.read_text().replace("#346458", "#8B4799"), encoding="utf-8")
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
 
     print("Compiling native UI and resources...", flush=True)
     run(aapt2, "compile", "--dir", work / "res", "-o", work / "resources.zip")
     run(aapt2, "link", "-o", work / "unsigned.apk", "--manifest", work / "AndroidManifest.xml",
-        "-I", android_jar, "--java", work / "generated", work / "resources.zip")
+        "-I", android_jar, "--custom-package", PACKAGE, "--java", work / "generated", work / "resources.zip")
     sources = sorted((work / "src").rglob("*.java")) + sorted((work / "generated").rglob("*.java"))
     bootclasspath = str(android_jar) + os.pathsep + str(build_tools / "core-lambda-stubs.jar")
     run(javac, "-J-Dfile.encoding=UTF-8", "-J-Duser.language=en", "-encoding", "UTF-8",
@@ -101,16 +128,16 @@ def main():
         "--output", work / "dex", *sorted((work / "classes").rglob("*.class")))
     with zipfile.ZipFile(work / "unsigned.apk", "a", compression=zipfile.ZIP_DEFLATED) as archive:
         archive.write(work / "dex/classes.dex", "classes.dex")
-    run(build_tools / "zipalign.exe", "-f", "-p", "4", work / "unsigned.apk", work / "aligned.apk")
+    run(build_tools / ("zipalign" + suffix), "-f", "-p", "4", work / "unsigned.apk", work / "aligned.apk")
 
     print("Signing and checking the exact APK...", flush=True)
-    keystore = ROOT / "signing/probe.p12"
+    keystore.parent.mkdir(parents=True, exist_ok=True)
     if not keystore.exists():
         run(keytool, "-genkeypair", "-keystore", keystore, "-storetype", "PKCS12",
             "-storepass:env", "TERMLENS_PROBE_SIGN_PASSWORD", "-alias", "termlens-probe",
             "-keyalg", "RSA", "-keysize", "3072", "-validity", "10000",
             "-dname", "CN=TermLens Local Probe")
-    staged_apk = work / f"TermLens-selection-probe-{VERSION}.apk"
+    staged_apk = work / (f"TermLens-manual-test-{VERSION}.apk" if args.test_app else f"TermLens-selection-probe-{VERSION}.apk")
     signer = build_tools / "lib/apksigner.jar"
     run(java, "-jar", signer, "sign", "--ks", keystore,
         "--ks-key-alias", "termlens-probe", "--ks-pass", "env:TERMLENS_PROBE_SIGN_PASSWORD",
@@ -120,13 +147,19 @@ def main():
     signature = run(java, "-jar", signer, "verify", "--verbose", "--print-certs", staged_apk)
     assert "Verified using v2 scheme (APK Signature Scheme v2): true" in signature
     assert "Verified using v3 scheme (APK Signature Scheme v3): true" in signature
-    alignment = run(build_tools / "zipalign.exe", "-c", "-p", "4", staged_apk)
-    badging = run(build_tools / "aapt.exe", "dump", "badging", staged_apk)
-    permissions = run(build_tools / "aapt.exe", "dump", "permissions", staged_apk)
-    manifest_dump = run(build_tools / "aapt.exe", "dump", "xmltree", staged_apk, "AndroidManifest.xml")
-    assert f"package: name='{PACKAGE}'" in badging
+    certificate_line = next(line for line in signature.splitlines() if "certificate SHA-256 digest:" in line)
+    signer_sha256 = certificate_line.split("digest:", 1)[1].strip().lower()
+    if args.expected_signer_sha256:
+        expected = args.expected_signer_sha256.replace(":", "").strip().lower()
+        if signer_sha256 != expected:
+            raise ValueError("APK signer does not match the expected original certificate; refusing upgrade delivery")
+    alignment = run(build_tools / ("zipalign" + suffix), "-c", "-p", "4", staged_apk)
+    badging = run(build_tools / ("aapt" + suffix), "dump", "badging", staged_apk)
+    permissions = run(build_tools / ("aapt" + suffix), "dump", "permissions", staged_apk)
+    manifest_dump = run(build_tools / ("aapt" + suffix), "dump", "xmltree", staged_apk, "AndroidManifest.xml")
+    assert f"package: name='{application_id}'" in badging
     assert "targetSdkVersion:'36'" in badging
-    assert "versionCode='15'" in badging
+    assert "versionCode='16'" in badging
     assert "launchable-activity: name='cn.weilin.termlens.probe.MainActivity'" in badging
     assert "application-debuggable" not in badging
     assert "android.permission.INTERNET" in permissions
@@ -143,7 +176,7 @@ def main():
         # Inspect bytes extracted from the final signed APK as a regular file.
         checked_dex = work / "verified-classes.dex"
         checked_dex.write_bytes(dex_bytes)
-    dex_dump = run(build_tools / "dexdump.exe", "-f", checked_dex)
+    dex_dump = run(build_tools / ("dexdump" + suffix), "-f", checked_dex)
     assert "Lcn/weilin/termlens/probe/ExplainActivity;" in dex_dump
     assert "Lcn/weilin/termlens/probe/DiagnosticsActivity;" in dex_dump
     assert "Lcn/weilin/termlens/probe/SettingsActivity;" in dex_dump
@@ -161,7 +194,10 @@ def main():
     assert hashlib.sha256(delivered.read_bytes()).hexdigest() == sha256
     report = {
         "apk": delivered.name,
-        "package": PACKAGE,
+        "package": application_id,
+        "side_by_side_test": args.test_app,
+        "signer_sha256": signer_sha256,
+        "expected_signer_verified": bool(args.expected_signer_sha256),
         "version": VERSION,
         "min_sdk": 23,
         "target_sdk": 36,
