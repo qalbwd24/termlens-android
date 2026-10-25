@@ -15,7 +15,7 @@ final class Ui {
     static final int ACCENT = Color.rgb(52, 100, 88);
     static final int CANVAS = Color.rgb(247, 248, 246);
 
-    static int dp(Activity activity, float value) {
+    static int dp(android.content.Context activity, float value) {
         return Math.round(value * activity.getResources().getDisplayMetrics().density);
     }
 

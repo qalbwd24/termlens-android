@@ -13,7 +13,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parent
 PACKAGE = "cn.weilin.termlens.probe"
-VERSION = "0.5.2"
+VERSION = "0.5.6"
 ANDROID = "{http://schemas.android.com/apk/res/android}"
 
 
@@ -159,7 +159,7 @@ def main():
     manifest_dump = run(build_tools / ("aapt" + suffix), "dump", "xmltree", staged_apk, "AndroidManifest.xml")
     assert f"package: name='{application_id}'" in badging
     assert "targetSdkVersion:'36'" in badging
-    assert "versionCode='16'" in badging
+    assert "versionCode='20'" in badging
     assert "launchable-activity: name='cn.weilin.termlens.probe.MainActivity'" in badging
     assert "application-debuggable" not in badging
     assert "android.permission.INTERNET" in permissions

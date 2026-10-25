@@ -78,6 +78,12 @@ final class LlmClient {
         return request(context, userText, systemPrompt, true, progress, callback);
     }
     static Request request(Context context, String userText, String systemPrompt, boolean streaming, Progress progress, Callback callback) {
+        JSONObject message = new JSONObject(); AppData.put(message, "role", "user"); AppData.put(message, "content", userText);
+        return requestConversation(context, new JSONArray().put(message), systemPrompt, streaming, progress, callback);
+    }
+    static Request requestConversation(Context context, JSONArray turns, String systemPrompt, boolean streaming, Progress progress, Callback callback) {
+        // Callers pass a fresh message array; freeze it before dispatching the background request.
+        final String frozenTurns = turns.toString();
         final Request request = new Request();
         final Timing timing = new Timing(); timing.streaming = streaming;
         final String key = TermLensPrefs.apiKey(context);
@@ -102,9 +108,7 @@ final class LlmClient {
                 connection.setRequestProperty("Authorization", "Bearer " + key);
                 connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
                 connection.setRequestProperty("Accept", streaming ? "text/event-stream" : "application/json");
-                JSONArray messages = new JSONArray();
-                messages.put(new JSONObject().put("role", "system").put("content", systemPrompt));
-                messages.put(new JSONObject().put("role", "user").put("content", userText));
+                JSONArray messages = buildMessages(systemPrompt, frozenTurns);
                 JSONObject body = new JSONObject().put("model", model).put("messages", messages)
                     .put("max_tokens", maxTokens).put("temperature", 0.2).put("stream", streaming);
                 if ("api.deepseek.com".equalsIgnoreCase(url.getHost())) body.put("thinking", new JSONObject().put("type", "disabled"));
@@ -145,6 +149,18 @@ final class LlmClient {
             finally { if (connection != null) connection.disconnect(); }
         }));
         return request;
+    }
+
+    static JSONArray buildMessages(String systemPrompt, String frozenTurns) throws Exception {
+        JSONArray messages = new JSONArray();
+        messages.put(new JSONObject().put("role", "system").put("content", systemPrompt));
+        JSONArray conversation = new JSONArray(frozenTurns);
+        for (int i = 0; i < conversation.length(); i++) {
+            JSONObject turn = conversation.getJSONObject(i); String role = turn.optString("role");
+            if (!"user".equals(role) && !"assistant".equals(role)) throw new Exception("问答消息角色无效");
+            messages.put(new JSONObject().put("role", role).put("content", turn.optString("content")));
+        }
+        return messages;
     }
 
     private static String read(InputStream input) throws Exception {

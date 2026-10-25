@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="cn.weilin.termlens.probe"
-    android:versionCode="16"
-    android:versionName="0.5.2-manual-input">
+    android:versionCode="20"
+    android:versionName="0.5.6-study">
     <uses-sdk android:minSdkVersion="23" android:targetSdkVersion="36" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
@@ -26,6 +26,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity android:name=".AskActivity" android:exported="false" android:theme="@style/ExplainTheme" android:enableOnBackInvokedCallback="true" />
         <activity android:name=".DiagnosticsActivity" android:exported="false" />
         <activity android:name=".HistoryActivity" android:exported="false" />
         <activity android:name=".PerformanceActivity" android:exported="false" />

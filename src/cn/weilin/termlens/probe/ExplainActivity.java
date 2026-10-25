@@ -42,14 +42,16 @@ import java.util.Locale;
 public final class ExplainActivity extends Activity {
     private static final int EDIT_CONNECTION = 51;
     private static final int EXPLAIN_SELECTION = 0x544c;
-    private static final int MAX_LEVELS = 8;
+    private static final int MAX_LEVELS = StudyNavigation.MAX_DEPTH + 1;
     private final ArrayList<Level> levels = new ArrayList<>();
     private LinearLayout root, content;
     private ScrollView scroll;
     private TextView levelLabel;
-    private ImageButton back, listen, favorite, copy, edit;
+    private ImageButton ask, listen, favorite, copy, edit;
     private Button lookup;
     private JSONObject profile;
+    private JSONObject inheritedLookup;
+    private int navigationDepth;
     private StudyText liveTranslation, liveExplanation;
     private TextView liveStatus;
     private View liveRule;
@@ -59,6 +61,8 @@ public final class ExplainActivity extends Activity {
     private String primarySystem = "", secondarySystem = "";
     private String selection = "", pressedSelection = "";
     private StudyText selectionView;
+    private ActionMode selectionMode;
+    private final BlankContentTap blankTap=new BlankContentTap();
     private boolean busy, rendering, destroyed;
     private int generation;
     private String lastRequestUser = "", lastRequestSystem = "";
@@ -89,6 +93,7 @@ public final class ExplainActivity extends Activity {
         manualDraft = state == null ? "" : state.getString("manual_draft", "");
         keyboardPending = manualMode && (state == null || state.getBoolean("manual_editing", true));
         snapshotPrompts();
+        readNavigation(getIntent(), state);
         SpeechOutput.get(this).maintain();
         if (historical != null) restoreProfile(historical);
         if (state != null) {
@@ -125,6 +130,27 @@ public final class ExplainActivity extends Activity {
         primarySystem = DesktopPrompts.system(this, TermLensPrefs.primaryPrompt(this), false);
         secondarySystem = DesktopPrompts.system(this, TermLensPrefs.secondaryPrompt(this), true);
     }
+    private void readNavigation(Intent intent, Bundle state) {
+        navigationDepth = StudyNavigation.depth(state == null ? intent.getIntExtra(StudyNavigation.DEPTH, 0) : state.getInt(StudyNavigation.DEPTH, 0));
+        String lookup = state == null ? intent.getStringExtra(StudyNavigation.LOOKUP) : state.getString(StudyNavigation.LOOKUP);
+        inheritedLookup = lookup == null || lookup.isEmpty() ? null : AppData.object(lookup);
+        String savedProfile = state == null ? intent.getStringExtra(StudyNavigation.PROFILE) : state.getString(StudyNavigation.PROFILE);
+        if (savedProfile != null) {
+            JSONObject holder = new JSONObject(), saved = new JSONObject();
+            AppData.put(saved, "promptProfile", AppData.object(savedProfile)); AppData.put(holder, "context", saved.toString()); restoreProfile(holder);
+        }
+    }
+    private int studyDepth() { return navigationDepth + Math.max(0, levels.size() - 1); }
+    private JSONObject rootContext() {
+        JSONObject inherited = inheritedLookup;
+        if (inherited == null && !levels.isEmpty() && levels.get(0).record != null)
+            inherited = AppData.context(levels.get(0).record.optString("context")).optJSONObject("lookupContext");
+        JSONObject value = new JSONObject(); Level first = levels.get(0);
+        AppData.put(value,"rootOriginal", LookupInput.clip(inherited == null ? first.original : inherited.optString("rootOriginal",first.original),3000,null));
+        AppData.put(value,"rootAnswer", LookupInput.clip(inherited == null ? first.raw : inherited.optString("rootAnswer",first.raw),5000,null));
+        AppData.put(value,"rootSourceId", inherited == null ? first.record == null ? "" : first.record.optString("id") : inherited.optString("rootSourceId"));
+        return value;
+    }
     private JSONObject historical(Intent intent) {String id=intent.getStringExtra("query_id");return id==null?null:AppData.get(this).find(id);}
     private void restoreProfile(JSONObject record) {
         JSONObject saved=AppData.context(record.optString("context","{}")).optJSONObject("promptProfile");
@@ -138,7 +164,7 @@ public final class ExplainActivity extends Activity {
         JSONObject historical=historical(intent);String input = historical==null?readInput(intent):historical.optString("text");
         manualMode = historical == null && input.trim().isEmpty();
         manualDraft = ""; keyboardPending = manualMode;
-        cancelRequest(); snapshotPrompts(); levels.clear();Level level=new Level(input);levels.add(level);
+        cancelRequest(); snapshotPrompts(); readNavigation(intent, null); levels.clear();Level level=new Level(input);levels.add(level);
         if(historical!=null){restoreProfile(historical);level.record=historical;level.raw=historical.optString("answer");level.error="complete".equals(historical.optString("status"))?"":historical.optString("error","此记录未完成");render();SpeechOutput.get(this).preload(level.record);}
         else {render();if(!input.trim().isEmpty())requestCurrent();else focusManualInput();}
     }
@@ -171,7 +197,7 @@ public final class ExplainActivity extends Activity {
         });
         setContentView(root); root.requestApplyInsets();
         LinearLayout header = new LinearLayout(this); header.setGravity(Gravity.CENTER_VERTICAL);
-        header.addView(Ui.title(this, "TermLens", 18), new LinearLayout.LayoutParams(0, -2, 1));
+        header.addView(Ui.title(this, "Termlens", 18), new LinearLayout.LayoutParams(0, -2, 1));
         levelLabel = Ui.text(this, "原文", 12, Ui.MUTED); levelLabel.setSingleLine(true);
         header.addView(levelLabel);
         // Keep the header small; the close action is always visible, even on a long answer.
@@ -183,7 +209,7 @@ public final class ExplainActivity extends Activity {
         View rule = new View(this); rule.setBackgroundColor(Color.rgb(220, 226, 221));
         root.addView(rule, new LinearLayout.LayoutParams(-1, Ui.dp(this, 1)));
         toolbar = new LinearLayout(this); toolbar.setGravity(Gravity.CENTER_VERTICAL);
-        back = icon(R.drawable.ic_termlens_back, "返回上一层"); back.setOnClickListener(v -> previousLevel());
+        ask = icon(R.drawable.ic_termlens_ask, "Ask... 快捷询问"); ask.setOnClickListener(v -> openAsk());
         listen = icon(R.drawable.ic_termlens_speaker, "朗读选中内容或当前结果");
         listen.setOnClickListener(v -> speak(selection.trim().isEmpty() ? current().raw : selection));
         favorite = icon(R.drawable.ic_termlens_star, "收藏当前词条"); favorite.setOnClickListener(v -> {
@@ -196,9 +222,7 @@ public final class ExplainActivity extends Activity {
         });
         edit = icon(R.drawable.ic_termlens_edit, "编辑当前原文");
         edit.setOnClickListener(v -> beginEditing());
-        for (ImageButton button : new ImageButton[]{back, listen, favorite, copy, edit}) toolbar.addView(button, size(40));
-        toolbar.addView(new View(this), new LinearLayout.LayoutParams(0, 1, 1));
-        lookup = Ui.button(this, "解释选中"); lookup.setTextSize(12); lookup.setFocusable(false);
+        lookup = Ui.button(this, "查询"); lookup.setTextSize(12); lookup.setFocusable(false);
         lookup.setPadding(Ui.dp(this, 8), 0, Ui.dp(this, 8), 0);
         lookup.setOnTouchListener((v, event) -> {
             if (event.getActionMasked() == MotionEvent.ACTION_DOWN) pressedSelection = selection;
@@ -207,8 +231,21 @@ public final class ExplainActivity extends Activity {
         });
         lookup.setOnClickListener(v -> { String text = pressedSelection.isEmpty() ? selection : pressedSelection;
             pressedSelection = ""; if (manualMode) submitManual(); else openLookup(text); });
-        toolbar.addView(lookup, new LinearLayout.LayoutParams(Ui.dp(this, 88), Ui.dp(this, 40)));
+        BottomTools.add(toolbar,lookup,listen,favorite,copy,edit,ask);
         root.addView(toolbar, new LinearLayout.LayoutParams(-1, Ui.dp(this, 48)));
+    }
+
+    @Override public boolean dispatchTouchEvent(MotionEvent event) {
+        boolean clear=blankTap.observe(event,scroll);
+        boolean handled=super.dispatchTouchEvent(event);
+        if(clear){
+            if(selectionMode!=null)selectionMode.finish();
+            rendering=true;
+            if(selectionView!=null&&selectionView.getText() instanceof android.text.Spannable)
+                android.text.Selection.removeSelection((android.text.Spannable)selectionView.getText());
+            rendering=false;selection="";pressedSelection="";selectionView=null;updateActions();
+        }
+        return handled;
     }
 
     private LinearLayout.LayoutParams size(int dp) { return new LinearLayout.LayoutParams(Ui.dp(this, dp), Ui.dp(this, dp)); }
@@ -227,7 +264,7 @@ public final class ExplainActivity extends Activity {
             setText(markdown ? fromHtml(Markdown.toHtml(value)) : value);
             setTextIsSelectable(true);
             setCustomSelectionActionModeCallback(new ActionMode.Callback() {
-                public boolean onCreateActionMode(ActionMode mode, Menu menu) { addExplain(menu); return true; }
+                public boolean onCreateActionMode(ActionMode mode, Menu menu) { selectionMode=mode; addExplain(menu); return true; }
                 public boolean onPrepareActionMode(ActionMode mode, Menu menu) { addExplain(menu); return true; }
                 private void addExplain(Menu menu) {
                     for (int i = menu.size() - 1; i >= 0; i--) {
@@ -243,7 +280,7 @@ public final class ExplainActivity extends Activity {
                     String text = start >= 0 && end > start ? getText().subSequence(start, end).toString() : selection;
                     mode.finish(); openLookup(text); return true;
                 }
-                public void onDestroyActionMode(ActionMode mode) { }
+                public void onDestroyActionMode(ActionMode mode) { if(selectionMode==mode)selectionMode=null; }
             });
         }
         @Override protected void onSelectionChanged(int start, int end) {
@@ -268,7 +305,7 @@ public final class ExplainActivity extends Activity {
         long renderStarted=android.os.SystemClock.elapsedRealtime();
         rendering = true; selection = ""; selectionView = null; pressedSelection = ""; content.removeAllViews();
         liveTranslation=null;liveExplanation=null;liveStatus=null;liveRule=null;
-        Level level = current(); levelLabel.setText(levels.size() == 1 ? "原文" : "词义 · " + levels.size());
+        Level level = current(); levelLabel.setText(levels.size() == 1 && inheritedLookup == null ? "原文" : "词义 · " + (studyDepth()+1));
         LinearLayout source = Ui.column(this); source.setPadding(Ui.dp(this, 10), Ui.dp(this, 8), Ui.dp(this, 10), Ui.dp(this, 8));
         source.setBackground(Ui.surface(this, Color.WHITE, 12));
         LinearLayout sourceHeader = new LinearLayout(this); sourceHeader.setGravity(Gravity.CENTER_VERTICAL);
@@ -277,7 +314,7 @@ public final class ExplainActivity extends Activity {
         if (manualMode) {
             manualInput = new EditText(this); manualInput.setId(0x544c02);
             manualInput.setTextSize(14); manualInput.setTextColor(Ui.INK);
-            manualInput.setHint("输入英文，回车翻译");
+            manualInput.setHint("Termlens");
             manualInput.setContentDescription("英文输入栏");
             manualInput.setSingleLine(true);
             manualInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
@@ -356,23 +393,49 @@ public final class ExplainActivity extends Activity {
     private void updateActions() {
         if (lookup == null || levels.isEmpty()) return;
         boolean selected = !selection.trim().isEmpty();
-        boolean canSubmit = !manualDraft.trim().isEmpty() && !(busy && manualDraft.trim().equals(current().original));
-        lookup.setText(manualMode ? (busy && !canSubmit ? "查询中…" : "翻译") : (busy ? "查询中…" : "解释选中"));
-        lookup.setEnabled(manualMode ? canSubmit : !busy);
-        lookup.setAlpha((manualMode ? canSubmit : !busy && selected) ? 1f : 0.5f);
+        boolean canSubmit = !busy && !manualDraft.trim().isEmpty();
+        lookup.setText("查询");
+        lookup.setContentDescription(busy ? "正在查询" : manualMode ? "查询输入的英文" : "查询选中内容");
+        lookup.setEnabled(manualMode ? canSubmit : !busy && selected);
+        lookup.setAlpha(lookup.isEnabled() ? 1f : 0.4f);
         edit.setEnabled(!manualMode);
         listen.setEnabled(!current().raw.isEmpty() || selected); copy.setEnabled(!current().raw.isEmpty());
         favorite.setEnabled(!busy&&current().record!=null&&!current().raw.isEmpty());
         favorite.setAlpha(current().record!=null&&AppData.get(this).saved(current().record)?1f:0.5f);
-        back.setContentDescription(levels.size() > 1 ? "返回上一层" : "返回原页面");
         close.setContentDescription(levels.size() > 1 ? "关闭本层，返回上一层" : "返回原页面");
     }
     private void openLookup(String query) {
         if (busy) return;
-        if (query == null || query.trim().isEmpty()) { toast("先在译文或解释里长按选词，再点“解释选中”"); return; }
-        if (levels.size() >= MAX_LEVELS) { toast("请先返回上一层，再选择其他词语"); return; }
+        if (query == null || query.trim().isEmpty()) { toast("先在译文或解释里长按选词，再点“查询”"); return; }
+        if (!StudyNavigation.canOpen(studyDepth())) { toast("请先返回上一层，再选择其他词语"); return; }
         current().scrollY = scroll.getScrollY(); cancelRequest(); manualMode = false; hideKeyboard();
         levels.add(new Level(query.trim())); requestCurrent();
+    }
+    private void openAsk() {
+        if (levels.isEmpty()) return;
+        if (!StudyNavigation.canOpen(studyDepth())) { toast("层级较多，请先返回几层后继续"); return; }
+        current().scrollY = scroll.getScrollY();
+        JSONObject root = rootContext();
+        String context;
+        if (manualMode) {
+            // A draft is not paired with the old query's answer.
+            context = AskPrompt.context(manualDraft, "", "", "", "", false);
+            root = new JSONObject(); AppData.put(root,"rootOriginal",LookupInput.clip(manualDraft,3000,null)); AppData.put(root,"rootAnswer","");
+        } else {
+            Level current = current(), first = levels.get(0);
+            Level parent = levels.size() > 1 ? levels.get(levels.size() - 2) : null;
+            JSONObject stored = current.record == null ? null : AppData.context(current.record.optString("context")).optJSONObject("lookupContext");
+            boolean selected = !selection.trim().isEmpty();
+            context = AskPrompt.context(selected ? selection : current.original, current.raw,
+                selected ? current.original : parent != null ? parent.original : stored == null ? "" : stored.optString("parentQuery"),
+                selected ? "" : parent != null ? parent.raw : stored == null ? "" : stored.optString("parentAnswer"),
+                stored == null ? first.original : stored.optString("rootOriginal", first.original), busy || !current.error.isEmpty());
+        }
+        if (busy) { cancelRequest(); current().error = "查询已暂停，可重试"; }
+        hideKeyboard(); SpeechOutput.get(this).stop();
+        startActivity(new Intent(this, AskActivity.class).putExtra(AskActivity.CONTEXT, context)
+            .putExtra(StudyNavigation.ROOT, root.toString()).putExtra(StudyNavigation.PROFILE, profile.toString())
+            .putExtra(StudyNavigation.DEPTH, StudyNavigation.child(studyDepth())));
     }
     private void beginEditing() {
         if (levels.isEmpty()) return;
@@ -383,6 +446,7 @@ public final class ExplainActivity extends Activity {
     }
     private void submitManual() {
         if (!manualMode || levels.isEmpty()) return;
+        if (busy) return;
         String query = manualDraft.trim();
         if (query.isEmpty()) { if (manualInput != null) manualInput.setError("请输入英文"); return; }
         if (busy && query.equals(current().original)) return;
@@ -424,21 +488,23 @@ public final class ExplainActivity extends Activity {
         if (levels.isEmpty() || current().original.trim().isEmpty()) return;
         cancelRequest(); final int requestId = generation; Level level = current();
         busy = true; level.error = ""; level.raw=""; render();
-        lastRequestSystem = levels.size() == 1 ? primarySystem : secondarySystem;
-        if (levels.size() == 1) lastRequestUser = level.original;
+        boolean contextual = levels.size() > 1 || inheritedLookup != null;
+        lastRequestSystem = contextual ? secondarySystem : primarySystem;
+        JSONObject requestRoot = rootContext();
+        if (!contextual) lastRequestUser = level.original;
         else {
-            Level first = levels.get(0), parent = levels.get(levels.size() - 2);
-            JSONObject rootContext=first.record==null?null:AppData.context(first.record.optString("context")).optJSONObject("lookupContext");
-            lastRequestUser = LookupInput.build(rootContext==null?first.original:rootContext.optString("rootOriginal",first.original),rootContext==null?first.raw:rootContext.optString("rootAnswer",first.raw), parent.original, parent.raw, level.original);
+            Level parent = levels.size() > 1 ? levels.get(levels.size() - 2) : null;
+            lastRequestUser = LookupInput.build(requestRoot.optString("rootOriginal"), requestRoot.optString("rootAnswer"),
+                parent == null ? inheritedLookup.optString("parentQuery") : parent.original,
+                parent == null ? inheritedLookup.optString("parentAnswer") : parent.raw, level.original);
         }
         JSONObject context=new JSONObject();AppData.put(context,"requestUserMessage",lastRequestUser);AppData.put(context,"recentTerms",new org.json.JSONArray());AppData.put(context,"promptProfile",profile);
-        if(levels.size()>1){int begin=lastRequestUser.indexOf('{'),end=lastRequestUser.lastIndexOf('}');if(begin>=0&&end>begin){JSONObject quoted=AppData.object(lastRequestUser.substring(begin,end+1));
-            JSONObject previous=levels.get(0).record==null?null:AppData.context(levels.get(0).record.optString("context")).optJSONObject("lookupContext");
-            AppData.put(quoted,"rootSourceId",previous==null?(levels.get(0).record==null?"":levels.get(0).record.optString("id")):previous.optString("rootSourceId"));AppData.put(context,"lookupContext",quoted);}}
+        if(contextual){int begin=lastRequestUser.indexOf('{'),end=lastRequestUser.lastIndexOf('}');if(begin>=0&&end>begin){JSONObject quoted=AppData.object(lastRequestUser.substring(begin,end+1));
+            AppData.put(quoted,"rootSourceId",requestRoot.optString("rootSourceId"));AppData.put(context,"lookupContext",quoted);}}
         else AppData.put(context,"lookupContext",JSONObject.NULL);
         String sourcePackage=getCallingPackage();AppData.put(context,"sourceApp",sourcePackage==null?"":sourcePackage);
         JSONObject quoted=context.optJSONObject("lookupContext");
-        level.record=AppData.get(this).begin(level.original,levels.size()>1,quoted==null?levels.get(0).original:quoted.optString("rootOriginal"),context.toString(),TermLensPrefs.model(this),lastRequestSystem);
+        level.record=AppData.get(this).begin(level.original,contextual,quoted==null?levels.get(0).original:quoted.optString("rootOriginal"),context.toString(),TermLensPrefs.model(this),lastRequestSystem);
         SpeechOutput.get(this).preloadOriginal(level.record);
         level.raw="";requestStarted=android.os.SystemClock.elapsedRealtime();firstDrawMs=-1;maxRenderMs=0;
         pending = LlmClient.request(this, lastRequestUser, lastRequestSystem, answer->{
@@ -478,6 +544,9 @@ public final class ExplainActivity extends Activity {
     }
     @Override protected void onSaveInstanceState(Bundle state) {
         if (!levels.isEmpty() && scroll != null) current().scrollY = scroll.getScrollY();
+        state.putInt(StudyNavigation.DEPTH, navigationDepth);
+        if (inheritedLookup != null) state.putString(StudyNavigation.LOOKUP, inheritedLookup.toString());
+        state.putString(StudyNavigation.PROFILE, profile.toString());
         state.putBoolean("manual_mode", manualMode); state.putString("manual_draft", manualDraft);
         state.putBoolean("manual_editing", manualInput != null && manualInput.hasFocus());
         state.putString("primary_system", primarySystem); state.putString("secondary_system", secondarySystem);
@@ -491,7 +560,7 @@ public final class ExplainActivity extends Activity {
     }
     @Override public void onBackPressed() { previousLevel(); }
     @Override public void finish() { cancelRequest(); setResult(RESULT_CANCELED); super.finish(); }
-    @Override protected void onPause(){if(busy&&!levels.isEmpty()&&current().record!=null)AppData.get(this).finish(current().record,current().raw,"pending","");super.onPause();}
+    @Override protected void onPause(){SpeechOutput.get(this).stop();if(busy&&!levels.isEmpty()&&current().record!=null)AppData.get(this).finish(current().record,current().raw,"pending","");super.onPause();}
     @Override protected void onDestroy() {
         if (android.os.Build.VERSION.SDK_INT >= 33 && backCallback != null)
             getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(backCallback);

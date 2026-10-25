@@ -164,6 +164,14 @@ final class SpeechOutput {
         AppData.put(m,role.equals("Word")?"OriginalFingerprint":"ExplanationFingerprint",profile.fingerprint(text));AppData.put(m,role+"Complete",true);commit(dir,m);
         android.util.Log.i("TLSpeech","cache_ready role="+role+" assets="+result.size());return result;
     }
+    // On-demand Ask playback uses audio-only metadata, never a dictionary-history entry.
+    void speakTemporary(String text) {
+        if (text == null || text.trim().isEmpty()) return;
+        String value = plain(text); JSONObject record = new JSONObject();
+        AppData.put(record,"id","ask-" + hash(value.getBytes(StandardCharsets.UTF_8)).substring(0,32));
+        AppData.put(record,"kind","ask"); AppData.put(record,"text",value); AppData.put(record,"answer",""); AppData.put(record,"created",AppData.now());
+        speak(record,value,"Word");
+    }
     void speak(JSONObject record,String text,String role) {
         final int token=++playbackGeneration;stopPlayer();clickAt=android.os.SystemClock.elapsedRealtime();readyMs=-1;playMs=-1;lastRole=role;lastCache="pending";lastState="准备朗读";
         final Profile profile=new Profile(context,provider);final JSONObject snapshot=AppData.object(record.toString());final int before=synthesized.get();

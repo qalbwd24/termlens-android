@@ -22,11 +22,11 @@ class ManualContracts(unittest.TestCase):
         submit=self.activity.split('private void submitManual() {',1)[1].split('private void focusManualInput()',1)[0]
         self.assertIn('levels.set(levels.size() - 1, new Level(query))',submit)
         self.assertNotIn('levels.clear()',submit)
-    def test_hardware_gesture_arrow_and_close_return_one_level(self):
+    def test_hardware_gesture_and_close_return_one_level(self):
         self.assertIn('backCallback = this::previousLevel',self.activity)
         self.assertIn('onBackPressed() { previousLevel(); }',self.activity)
         self.assertIn('close.setOnClickListener(v -> previousLevel())',self.activity)
-        self.assertIn('back.setOnClickListener(v -> previousLevel())',self.activity)
+        self.assertIn('ask.setOnClickListener(v -> openAsk())',self.activity)
         back=self.activity.split('private void previousLevel() {',1)[1].split('private void speak(',1)[0]
         self.assertIn('if (hideKeyboard()) return;',back)
         self.assertIn('if (levels.size() <= 1) { finish(); return; }',back)
@@ -39,9 +39,9 @@ class ManualContracts(unittest.TestCase):
         self.assertIn('FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM',self.activity)
         self.assertIn('Type.systemBars() | android.view.WindowInsets.Type.ime()',self.activity)
     def test_pencil_left_and_right_action_retained(self):
-        self.assertIn('new ImageButton[]{back, listen, favorite, copy, edit}',self.activity)
-        self.assertIn('Ui.dp(this, 88), Ui.dp(this, 40)',self.activity)
-        self.assertIn('lookup.setEnabled(manualMode ? canSubmit : !busy)',self.activity)
+        self.assertIn('BottomTools.add(toolbar,lookup,listen,favorite,copy,edit,ask)',self.activity)
+        self.assertIn('lookup.setText("查询")',self.activity)
+        self.assertIn('lookup.setEnabled(manualMode ? canSubmit : !busy && selected)',self.activity)
     def test_stale_requests_and_parent_scroll_guarded(self):
         self.assertIn('generation != requestId',self.activity)
         self.assertIn('current() != level',self.activity)

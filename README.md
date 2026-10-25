@@ -1,4 +1,34 @@
-# TermLens Android 0.5.2 手动输入与逐层返回
+# TermLens Android 0.5.6
+
+## 本次更新
+
+- 翻译页可编辑英文、无选区直接输入；Ask 使用独立英文提示词，以简单英文回答英语学习问题。原主/二级翻译提示词不变。
+- 翻译和 Ask 可交替多层打开，逐层返回恢复父页面内容、滚动位置和问答记录；同一 Ask 窗口可继续提问。
+- 两页标题统一 `Termlens`；输入占位分别 `Termlens` / `Ask...`。Ask 右上显示 `疑惑 · N` 实际层级，不显示上下文面板或空白页介绍文案。
+- 横向工具栏：朗读、收藏、复制、编辑；翻译页的 Ask 图标在右侧主按钮左边。主按钮仅显示“询问”/“查询”，不可点击时变淡。
+- 内容空白处短点按取消选区；滚动、长按、多指与输入栏操作不作为空白点击。
+- Ask 收藏保存实际完成的问答及有限上下文，从收藏仍打开 Ask；沿用旧数据库及 v2 备份格式，不自动请求或预取音频。
+- Ask 朗读仅在点击时执行；默认 US Andrew +10%，自定义语音配置保留。
+
+## 正式升级构建
+
+生产应用 ID：`cn.weilin.termlens.probe`，versionCode **20**。必须使用原安装版签名；缺少原 `signing/probe.p12` / `password.dpapi` 时脚本拒绝构建，不能用测试签名替代。
+
+在原 Windows 签名电脑的源码目录执行：
+
+```powershell
+git pull --ff-only origin main
+.\build.ps1 -Output (Join-Path $PWD 'APK-0.5.6')
+```
+
+工具目录/ Python 路径非默认时，通过 `-ToolRoot`、`-Python` 指定。不要把密钥或密码提交到 GitHub。
+独立测试使用 `python build.py --tools <工具目录> --test-app --output <新目录>`；包名 `.manualtest`，不覆盖生产版。
+
+## 验证边界
+
+Java/aapt2/D8 编译、签名/Manifest 校验、主机手势/导航/提示词模型与静态/SQLite 模型检查。Instrumentation 仅编译，未运行；本轮未执行模拟器、真机 UI 或真实模型/TTS 请求。用户已试用独立测试版并批准整合。正式 APK 仍需原签名环境生成。
+
+## 版本沿革
 
 ## 0.5.2（2026-10-25，用户已验收独立测试版）
 
@@ -9,7 +39,7 @@
 - 默认朗读改为 `en-US-AndrewNeural`、`+10%`。旧默认 Andrew Multilingual / 0% 一次迁移；已有自定义声音或速度保留。缓存指纹原本已包含声音和速度，不复用不匹配的旧音频，不删除收藏。
 - 独立安装包为 `cn.weilin.termlens.probe.manualtest`，名称 **TermLens 测试版**，紫色图标，原生菜单 **Explain 测试**。不会覆盖旧应用，设置、密钥、历史与音频完全隔离；需要在测试版自行配置模型。测试常驻按钮时建议只开启测试版的无障碍服务，避免两个按钮重叠。
 
-用户已确认独立测试版 OK，并授权更新源码。原版升级必须在持有原 `signing/probe.p12` 和 `password.dpapi` 的原签名电脑构建，应用 ID 为 `cn.weilin.termlens.probe`、versionCode 16（旧版为 15）；不能把测试版签名当成升级签名。生产构建缺少原密钥会直接拒绝，不再自动生成新密钥。可传 `--expected-signer-sha256 <原APK证书SHA256>` 校验签名，不一致不会交付产物。不要提交或上传签名文件，也不要把密码写入日志。
+用户已确认独立测试版 OK，并授权更新源码。原版升级必须在持有原 `signing/probe.p12` 和 `password.dpapi` 的原签名电脑构建，应用 ID 为 `cn.weilin.termlens.probe`、versionCode 20（旧版为 15/16）；不能把测试版签名当成升级签名。生产构建缺少原密钥会直接拒绝，不再自动生成新密钥。可传 `--expected-signer-sha256 <原APK证书SHA256>` 校验签名，不一致不会交付产物。不要提交或上传签名文件，也不要把密码写入日志。
 
 独立测试构建：`python3 build.py --tools <Android工具目录> --test-app --output <新产物目录>`，签名密码通过 `TERMLENS_PROBE_SIGN_PASSWORD` 环境变量提供。支持 Linux / Windows；测试版使用独立本地测试签名，不使用生产签名。工具目录内含 `jdk/**/bin`、`build-tools/**/aapt2`、`platform/**/android.jar`。
 

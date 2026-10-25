@@ -34,7 +34,7 @@ public final class HistoryActivity extends Activity {
                 preview=Ui.text(HistoryActivity.this,"",12,Ui.MUTED);preview.setMaxLines(2);preview.setEllipsize(TextUtils.TruncateAt.END);LinearLayout.LayoutParams pp=new LinearLayout.LayoutParams(-1,-2);pp.topMargin=Ui.dp(HistoryActivity.this,5);card.addView(preview,pp);
                 detail=Ui.text(HistoryActivity.this,"",10,Ui.MUTED);LinearLayout.LayoutParams dp=new LinearLayout.LayoutParams(-1,-2);dp.topMargin=Ui.dp(HistoryActivity.this,7);card.addView(detail,dp);}
             JSONObject item=items.optJSONObject(at);title.setText(("1".equals(item.optString("saved"))?"★ ":"")+item.optString("text"));
-            String raw=page==2?item.optString("scene_name"):LookupInput.parts(item.optString("answer"))[0];if(raw.isEmpty()&&page!=2)raw=item.optString("answer");
+            String raw=page==2?item.optString("scene_name"):"ask".equals(item.optString("kind"))?item.optString("answer"):LookupInput.parts(item.optString("answer"))[0];if(raw.isEmpty()&&page!=2)raw=item.optString("answer");
             preview.setText(SpeechOutput.plain(raw));preview.setVisibility(raw.isEmpty()?View.GONE:View.VISIBLE);
             long date=AppData.parseDate(item.optString("created"));String time=date<0?"":new java.text.SimpleDateFormat("MM-dd HH:mm",java.util.Locale.getDefault()).format(new java.util.Date(date));
             String status=page==2?"选词记录":"complete".equals(item.optString("status"))?"已缓存":"cancelled".equals(item.optString("status"))?"已取消":"未完成";
@@ -68,7 +68,7 @@ public final class HistoryActivity extends Activity {
     }
     private void open(JSONObject item){
         JSONObject record=page==2?AppData.get(this).find(item.optString("id")):item;
-        if(record!=null){startActivity(new Intent(this,ExplainActivity.class).putExtra("query_id",record.optString("id")));return;}
+        if(record!=null){startActivity(new Intent(this,"ask".equals(record.optString("kind"))?AskActivity.class:ExplainActivity.class).putExtra("query_id",record.optString("id")));return;}
         new AlertDialog.Builder(this).setMessage(item.optString("text")+"\n\n解释缓存已过期，选词仍保留。").setPositiveButton("重新解释",(d,w)->startActivity(new Intent(this,ExplainActivity.class).putExtra(Intent.EXTRA_PROCESS_TEXT,item.optString("text")))).setNegativeButton("返回",null).show();
     }
     private void backupMenu(){new AlertDialog.Builder(this).setTitle("备份与导入").setItems(new String[]{"导出历史 JSON","导出收藏 JSON","导入 JSON","导出完整备份（含音频）","导入完整备份"},(d,which)->{

@@ -56,7 +56,14 @@ final class AppData extends SQLiteOpenHelper {
         try (Cursor c = getReadableDatabase().rawQuery("SELECT record FROM favorites WHERE favorite_key=?", new String[]{kind + ":" + key(text)})) { return c.moveToFirst() ? object(c.getString(0)) : null; }
     }
     synchronized boolean saved(JSONObject record) {
-        JSONObject f = favorite(record.optString("kind"), record.optString("text")); return f != null && f.optBoolean("Saved");
+        JSONObject f = favorite(record.optString("kind"), record.optString("text")); return f != null && f.optBoolean("Saved") && (!"ask".equals(record.optString("kind")) || f.optString("QueryId").equals(record.optString("id")));
+    }
+    /** Called only on an explicit Ask favorite action; never creates a selection event. */
+    synchronized void persistAsk(JSONObject record) {
+        if(!"ask".equals(record.optString("kind")) || !"complete".equals(record.optString("status")) || !safeId(record.optString("id"))
+            || record.optString("text").trim().isEmpty() || record.optString("answer").trim().isEmpty())throw new IllegalArgumentException("问答尚未完成");
+        put(record,"context",AskFavorite.snapshot(record).toString());put(record,"term_key",key(record.optString("text")));
+        getWritableDatabase().insertWithOnConflict("queries",null,values(record,RECORD),SQLiteDatabase.CONFLICT_REPLACE);
     }
     synchronized JSONObject begin(String text, boolean secondary, String sourceText, String context, String model, String prompt) {
         JSONObject r = new JSONObject();
@@ -110,7 +117,7 @@ final class AppData extends SQLiteOpenHelper {
     synchronized JSONArray list(boolean savedOnly, String search) {
         String like = "%" + search.replace("!","!!").replace("%","!%").replace("_","!_") + "%";
         String sql = "SELECT q.*,COALESCE(f.saved,0) AS saved FROM queries q LEFT JOIN favorites f ON f.favorite_key=q.kind||':'||q.term_key WHERE (q.text LIKE ? ESCAPE '!' OR q.answer LIKE ? ESCAPE '!')" + (savedOnly ? " AND f.saved=1" : "") + " ORDER BY q.created DESC LIMIT 500";
-        JSONArray result = new JSONArray(); try (Cursor c = getReadableDatabase().rawQuery(sql,new String[]{like,like})) { while(c.moveToNext()) result.put(row(c)); } return result;
+        JSONArray result = new JSONArray(); try (Cursor c = getReadableDatabase().rawQuery(sql,new String[]{like,like})) { while(c.moveToNext()) { JSONObject r=row(c); if("ask".equals(r.optString("kind"))){boolean exact=saved(r);put(r,"saved",exact?"1":"0");if(savedOnly&&!exact)continue;}result.put(r); } } return result;
     }
     synchronized JSONObject export(boolean savedOnly) {
         JSONObject result = new JSONObject(); JSONArray records = new JSONArray(), favorites = new JSONArray(), events = new JSONArray(); SQLiteDatabase db = getReadableDatabase();
@@ -118,7 +125,7 @@ final class AppData extends SQLiteOpenHelper {
         try {
             String filter = savedOnly ? " WHERE EXISTS(SELECT 1 FROM favorites f WHERE f.saved=1 AND f.favorite_key=q.kind||':'||q.term_key)" : "";
             try (Cursor c = db.rawQuery("SELECT * FROM queries q"+filter+" ORDER BY created DESC",null)) {
-                while (c.moveToNext()) { JSONObject r = row(c); r.remove("term_key"); put(r,"saved",saved(r)); records.put(r); }
+                while (c.moveToNext()) { JSONObject r = row(c); if(savedOnly&&!saved(r))continue; r.remove("term_key"); put(r,"saved",saved(r)); records.put(r); }
             }
             try (Cursor c = db.rawQuery("SELECT record FROM favorites WHERE saved=1 ORDER BY rowid",null)) { while(c.moveToNext()) favorites.put(object(c.getString(0))); }
             filter = savedOnly ? " WHERE EXISTS(SELECT 1 FROM favorites f WHERE f.saved=1 AND f.favorite_key=s.kind||':'||s.normalized_key)" : "";
@@ -170,7 +177,7 @@ final class AppData extends SQLiteOpenHelper {
     synchronized JSONArray retain() {
         SQLiteDatabase db=getWritableDatabase(); JSONArray expired=new JSONArray(); long cutoff=System.currentTimeMillis()-15L*86400000L;
         db.beginTransaction();
-        try (Cursor c=db.rawQuery("SELECT * FROM queries WHERE source IN ('release-selection','release-context','legacy')",null)) {
+        try (Cursor c=db.rawQuery("SELECT * FROM queries WHERE source IN ('release-selection','release-context','legacy','ask-favorite')",null)) {
             while(c.moveToNext()) {
                 JSONObject r=row(c); long created=parseDate(r.optString("created"));
                 if(created<0 || created>=cutoff) continue;

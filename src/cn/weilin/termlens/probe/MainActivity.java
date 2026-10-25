@@ -21,7 +21,7 @@ public final class MainActivity extends Activity {
         Ui.space(this,body,16);body.addView(Ui.text(this,"检查与帮助",12,Ui.MUTED));Ui.space(this,body,8);
         row(body,"响应速度检测","查看首段文字和完整回答的等待时间",()->startActivity(new Intent(this,PerformanceActivity.class)));
         row(body,"文字处理入口","检查原生划词菜单是否可用",()->startActivity(new Intent(this,DiagnosticsActivity.class)));
-        Ui.space(this,body,18);body.addView(Ui.text(this,"0.5.2 · 内置 Edge 语音 · 数据保存在本机",10,Ui.MUTED));
+        Ui.space(this,body,18);body.addView(Ui.text(this,"0.5.6 · 内置 Edge 语音 · 数据保存在本机",10,Ui.MUTED));
     }
     private void row(LinearLayout parent,String label,String detail,Runnable action){
         LinearLayout item=Ui.column(this);int p=Ui.dp(this,12);item.setPadding(p,p,p,p);item.setBackground(Ui.surface(this,android.graphics.Color.WHITE,10));
